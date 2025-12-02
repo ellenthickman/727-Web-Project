@@ -16,6 +16,7 @@ library(httr)
 library(jsonlite)
 library(FAOSTAT) # package for FAO Data (local food chain indicator made from Self-Sufficiency inputs)
 library(wbstats) # package for World Bank Data
+library(WDI)
 library(countrycode) # for linking datasets
 ```
 
@@ -31,8 +32,12 @@ options(scipen = 999)
 ```{r}
 # Remove non-countries with WB look-up table
 library(readr)
-country_codes <- read_csv("~/Desktop/727/727 Web Project/wb_countrycodes.csv")
-country_codes$Code <- sprintf("%03d", country_codes$Code)
+country_codes <- read_csv("~/Desktop/727/727 Web Project/wb_countrycodes.csv") %>%
+  mutate(
+    area_code = sprintf("%03d", Code)
+  ) %>%
+  select(-Code) %>%
+  relocate(area_code)
 country_codes
 ```
 
@@ -49,8 +54,8 @@ fao_data_c <- fao_data %>%
       sprintf("%03d", .)          # pad to 3 digits
   ) %>%
   filter(
-    area_code %in% country_codes$Code,
-    year == 2023,
+    area_code %in% country_codes$area_code,
+    year == 2021,
     item == "Wheat and products",
     element %in% c("production", "import_quantity", "export_quantity")) %>%
   select(area_code, area, value, element)
@@ -59,8 +64,9 @@ fao_data_c
 ## 1B. Clean Data
 ```{r}
 # Convert to wide format
-fao_data_c_w <- pivot_wider(fao_data_c, names_from = element, values_from = value)
-fao_data_c_w
+fao_data_c_w <- pivot_wider(fao_data_c, names_from = element, values_from = value)  %>%
+  left_join(country_codes, by = "area_code")
+fao_data_c_w 
 ```
 
 
@@ -82,44 +88,80 @@ fao_data_c_w_ssr <- fao_data_c_w %>%
 fao_data_c_w_ssr
 ```
 ## Dependent Variables
-# 2. Fetch FAO Data (Nitrogen - Ecological Ceiling)
-# Domain: 'RFN' = Fertilizers by Nutrient
-nitro_data <- get_faostat_bulk(code = "RFN", date_format = "%Y") %>%
-  filter(Year == 2021, 
-         Item == "Nutrient nitrogen N (total)",
-         Element == "Use per area of cropland") %>%
-  select(area_code_m49, Nitrogen_Use = Value)
-  
-# 3. Get World Bank Data (GDP, Life Expectancy)
-# "NY.GDP.PCAP.CD" = GDP per capita
-# "SP.DYN.LE00.IN" = Life Expectancy
-wb_data <- wb_data(indicator = c("NY.GDP.PCAP.CD", "SP.DYN.LE00.IN"), 
-                   start_date = 2021, end_date = 2021)
+# 4. Fetch World Bank Data (Gini coefficient)
+```{r}
+# wb_cachelist <- wb_cache()
+# str(wb_cachelist, max.level = 1)
 
-# 4. Fetch World Bank Data (Obesity & Gini)
-degrowth_vars <- wb_data(
-  indicator = c("SH.STA.OB18.MA.ZS", "SI.POV.GINI"), 
-  start_date = 2021, end_date = 2021
+gini_data <- wb_data(
+  indicator = "SI.POV.GINI",
+  country = "all",
+  return_wide = TRUE
 ) %>%
-  select(iso3c, Obesity_Rate = SH.STA.OB18.MA.ZS, Gini_Index = SI.POV.GINI)
+  select(country, iso3c, date, Gini_Index = SI.POV.GINI) %>%
+  filter(
+     iso3c %in% country_codes$ISO3,
+     date %in% c(2021)
+  )
+gini_data
+
+# Missingness by (year) for years 2000-2023
+# gini_na_year = gini_data %>%
+#   group_by(date) %>%
+#   summarise(
+#     na_ct_year   = sum(is.na(Gini_Index)),
+#     total_n_year = n(),                      # group-specific N
+#     na_pct_year  = na_ct_year / total_n_year * 100,
+#     sample_n_year = n() - na_ct_year
+#   )
+library(ggplot2)
+library(dplyr)
+
+# assuming your tibble is named gini_missing
+ggplot(gini_na_year, aes(x = date, y = na_pct_year)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  scale_x_continuous(breaks = gini_na_year$date) +
+  labs(
+    title = "Gini Index Missingness Rate by Year",
+    subtitle = "Percent of countries without a Gini observation",
+    x = "Year",
+    y = "Missingness (%)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", size = 18),
+    plot.subtitle = element_text(size = 13),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.grid.minor = element_blank()
+  )
+
+```
 
 ## 4. Join the tables
-master_table <- left_join(fao_data, wb_data, by = "iso3c")
+```{r}
+master_table <- fao_data_c_w_ssr %>%
+  left_join(gini_data, by = c("ISO3" = "iso3c"))
+master_table
+```
+## 5. Check for NAs 
+```{r}
+# Missingness by (year) for years 2000-2023
+master_table %>%
+  summarise(
+    na_ct_year_g   = sum(is.na(master_table$Gini_Index)),
+    total_n_year_g = n(),                      # group-specific N
+    na_pct_year_g  = na_ct_year_g / total_n_year_g * 100,
+    sample_n_year_g = n() - na_ct_year_g,
+    na_ct_year_s   = sum(is.na(master_table$ssr)),
+    total_n_year_s = n(),                      # group-specific N
+    na_pct_year_s  = na_ct_year_s / total_n_year_s * 100,
+    sample_n_year_s = n() - na_ct_year_s)
 
-# 3. Join logic (Requires your previous Master Table)
-# Note: You need to map FAO M49 to ISO3c again for the Nitrogen data
-nitro_data$iso3c <- countrycode(nitro_data$area_code_m49, "iso3n", "iso3c")
-
-final_dataset <- master_table %>%
-  left_join(degrowth_vars, by = "iso3c") %>%
-  left_join(nitro_data, by = "iso3c")
-
-## 5. Check for NAs (Common in Gini/Nitrogen data)
-# You may need to drop rows or impute data for the clustering to work
-clean_data <- na.omit(final_dataset)
-
-
-
+master_table_clean <- 
+  master_table %>%
+  drop_na(Gini_Index, ssr)
+```
 
 
 
@@ -150,4 +192,24 @@ countries <- wb_countries %>%
 fao_data$iso3c <- countrycode(fao_data$area_code_m49, 
                               origin = "iso3n", 
                               destination = "iso3c")
+```
+
+```{r}
+# 2. Fetch FAO Data (Nitrogen - Ecological Ceiling)
+# Domain: 'RFN' = Fertilizers by Nutrient
+nitro_data <- get_faostat_bulk(code = "RFN", date_format = "%Y") %>%
+  filter(Year == 2021, 
+         Item == "Nutrient nitrogen N (total)",
+         Element == "Use per area of cropland") %>%
+  select(area_code_m49, Nitrogen_Use = Value)
+```
+
+```{r}
+
+  
+# 3. Get World Bank Data (GDP, Life Expectancy)
+# "NY.GDP.PCAP.CD" = GDP per capita
+# "SP.DYN.LE00.IN" = Life Expectancy
+wb_data <- wb_data(indicator = c("NY.GDP.PCAP.CD", "SP.DYN.LE00.IN"), 
+                   start_date = 2021, end_date = 2021)
 ```
