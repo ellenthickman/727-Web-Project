@@ -63,7 +63,8 @@ options(scipen = 999)
 library(readr)
 country_codes <- read_csv("~/Desktop/727/727 Web Project/wb_countrycodes.csv") %>%
   mutate(
-    area_code = sprintf("%03d", Code)
+    area_code = sprintf("%03d", Code),
+    region = countrycode(sourcevar = ISO3, origin = "iso3c", destination = "region")
   ) %>%
   select(-Code) %>%
   relocate(area_code)
@@ -88,15 +89,19 @@ fao_data_c <- fao_data %>%
     year == 2021,
     item == "Wheat and products",
     element %in% c("production", "import_quantity", "export_quantity")) %>%
-  select(area_code, area, value, element)
+  select(area_code, area, value, element) %>%
+  left_join(
+    country_codes %>% select(area_code, region),
+    by = "area_code"
+  )
 fao_data_c
 ```
 
 ```{r, include=FALSE}
 ## 1D. Clean Data
 # Convert to wide format
-fao_data_c_w <- pivot_wider(fao_data_c, names_from = element, values_from = value)  %>%
-  left_join(country_codes, by = "area_code")
+fao_data_c_w <- fao_data_c_w %>%
+  left_join(country_codes %>% select(area_code, region), by = "area_code")
 fao_data_c_w 
 ```
 
@@ -161,7 +166,6 @@ gini_na_year = wb_indicators2000 %>%
     sample_n_year = n() - na_ct_year
   )
 
-
 # assuming your tibble is named gini_missing
 ggplot(gini_na_year, aes(x = date, y = na_pct_year)) +
   geom_line(linewidth = 1.2) +
@@ -188,9 +192,12 @@ ggsave("gini_missingness_by_year.png", width = 10, height = 6)
 
 As observed in Figure 1., missingness for the Gini Index is high across the years 200 and 2023, ranging from \~60% missingness to \~75%. The U-shaped curve shows that NSO HH data collection was highest in the years between 2000 and 2023, with the highest amount of missingness at the peaks of the last 20 years. In the present analysis, I select 2021 Gini data since it yields the highest sample size in the most recent (last 5) years.
 
-## WB indicators: gini, gdp, life expectancy
+## 2B. WB Data: Additional World Bank Indicators for 2021
 
-```{r}
+I also collect World Bank data for GDP per capita (current USD) and Life Expectancy at Birth (total years) for 2021 to include in the analysis as additional development indicators. GDP per capita is a standard measure of economic prosperity, while life expectancy reflects overall health outcomes in a country.
+
+```{r, include=FALSE}
+## WB indicators: gini, gdp, life expectancy
 wb_indicators <- wb_data(
   indicator = c("SI.POV.GINI", "NY.GDP.PCAP.CD", "SP.DYN.LE00.IN"),
   country = "all",
@@ -204,17 +211,16 @@ wb_indicators <- wb_data(
 wb_indicators
 ```
 
+```{r, include=FALSE}
 ## 4. Join the tables
-
-```{r}
 master_table <- fao_data_c_w_ssr %>%
   left_join(wb_indicators, by = c("ISO3" = "iso3c"))
 master_table
 ```
 
-## 5. Check for NAs
-
+#stopped here
 ```{r}
+## 5. Check for Missingness in Master Table: Gini, SSR, GDP, region
 # Missingness by gini coeff and ssr variables
 master_table %>%
   summarise(
