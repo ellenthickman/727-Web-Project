@@ -9,6 +9,7 @@ output: word_document
   number_sections: true
   fig_caption: true
   df_print: kable
+bibliography: ref.bib
 ---
 
 GitHub Link: <https://github.com/ellenthickman/727-Web-Project>
@@ -36,7 +37,7 @@ After cleaning the data and addressing outliers, I explore distributions and rel
 
 # Data Sources:
 
-Using country-level data for 2021, I combine FAOSTAT measures of food self-sufficiency (SSR) with World Bank indicators of GDP per capita, life expectancy, and income inequality (Gini Index).
+Using country-level data for 2021, I combine FAOSTAT measures of food self-sufficiency (SSR) with World Bank indicators of GDP per capita, life expectancy, and income inequality (Gini Index), by using the ISO3 country codes as a common key. Below, I describe the data collection and cleaning process for each dataset.
 
 ## 1A. FAO Data: Creating Food Self-Sufficiency Ratio (SSR)
 
@@ -133,7 +134,7 @@ fao_data_c_w_ssr %>%
 
 ## 2A. WB Data: Fetching World Bank Indicators
 
-### Income Inequality: Gini Index (2000-2023) to check for missingness
+### Income Inequality: Gini Index
 
 Income inequality is a critical development indicator, often linked to social stability and economic health. The Gini Index measures income distribution within a country, where 0 represents perfect equality and 100 indicates maximal inequality. Usually, countries range from a score of 20 (more equal) to 60 (less equal).
 
@@ -162,7 +163,7 @@ gini_na_year = wb_indicators2000 %>%
   summarise(
     na_ct_year   = sum(is.na(Gini_Index)),
     total_n_year = n(),                      # group-specific N
-    na_pct_year  = na_ct_year / total_n_year * 100,
+    na_pct_year  = na_ct_year / 193 * 100,
     sample_n_year = n() - na_ct_year
   )
 
@@ -190,7 +191,7 @@ ggsave("gini_missingness_by_year.png", width = 10, height = 6)
 
 ```
 
-As observed in Figure 1., missingness for the Gini Index is high across the years 200 and 2023, ranging from \~60% missingness to \~75%. The U-shaped curve shows that NSO HH data collection was highest in the years between 2000 and 2023, with the highest amount of missingness at the peaks of the last 20 years. In the present analysis, I select 2021 Gini data since it yields the highest sample size in the most recent (last 5) years.
+As observed in Figure 1., missingness for the Gini Index is high across the years 200 and 2023, ranging from \~60% missingness to \~80%. The U-shaped curve shows that NSO HH data collection was highest in the years between 2000 and 2023, with the highest amount of missingness at the peaks of the last 20 years. In the present analysis, I select 2021 Gini data since it yields the highest sample size in the most recent (last 5) years.
 
 ## 2B. WB Data: Additional World Bank Indicators for 2021
 
@@ -218,27 +219,109 @@ master_table <- fao_data_c_w_ssr %>%
 master_table
 ```
 
-#stopped here
-```{r}
-## 5. Check for Missingness in Master Table: Gini, SSR, GDP, region
-# Missingness by gini coeff and ssr variables
-master_table %>%
+#3B. Fraction of Missing Information by Key Variables
+
+In Table 3., the fraction of missingness for the two key variables of interest: Gini Index and Food Self-Sufficiency Ratio (SSR) is provided over the total number of countries in the world [@un2025].
+
+As you see here, there are high levels of missingness for both Gini Index (approximately 53.37%) and SSR (approximately 20.92%), indicating that a significant portion of countries lack data for these indicators in 2021. This missingness was addressed  by restricting the sample to countries with complete data.
+```{r, echo=FALSE}
+## 5. Check for Missingness in Master Table: Gini Index and SSR
+# 5.1 Missingness Summary Table: Gini
+gini_summary <- master_table %>%
   summarise(
-    na_ct_year_g   = sum(is.na(master_table$Gini_Index)), # Missingness by gini
-    total_n_year_g = n(),                      # group-specific N
-    na_pct_year_g  = na_ct_year_g / total_n_year_g * 100,
-    sample_n_year_g = n() - na_ct_year_g,
-      na_ct_year_s   = sum(is.na(master_table$ssr)), # Missingness by ssr
-      total_n_year_s = n(),                      # group-specific N
-      na_pct_year_s  = na_ct_year_s / total_n_year_s * 100,
-      sample_n_year_s = n() - na_ct_year_s,
-        na_ct_year_gdp   = sum(is.na(master_table$gdp)), # Missingness by gdp
-        total_n_year_gdp = n(),                      # group-specific N
-        na_pct_year_gdp  = na_ct_year_gdp / total_n_year_gdp * 100,
-        sample_n_year_gdp = n() - na_ct_year_gdp)
+    variable = "Gini_Index",
+    na_count       = sum(is.na(Gini_Index)),
+    na_percent     = round(na_count / 193 * 100, 2),
+    usable_n       = n() - na_count
+  )
 
-# Missingness by region
+# 5.2 Missingness Summary Table: SSR
+ssr_summary <- master_table %>%
+  summarise(
+    variable = "ssr",
+    na_count       = sum(is.na(ssr)),
+    na_percent     = round(na_count / 193 * 100, 2),
+    usable_n       = n() - na_count
+  )
 
+# Combine both summaries into one table
+na_gini_srr_table <- bind_rows(gini_summary, ssr_summary)
+na_gini_srr_table
+```
+
+Next, I examined missingness patterns by GDP and by region to see if certain groups of countries were more likely to have missing data for Gini Index or SSR. From Table 4. and Table 5., we can see that lower-income countries and certain regions (e.g., Sub-Saharan Africa) have higher rates of missingness, which may reflect challenges in data collection and reporting in these contexts.
+```{r, echo=FALSE}
+#6. Missingness by GDP, by WB Income Group Thresholds (https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups)
+#6.1 Create Income Group Variable
+master_table <- master_table %>%
+  mutate(
+    income_group = case_when(
+      gdp <= 1135                       ~ "Low income",
+      gdp > 1135 & gdp <= 4465   ~ "Lower middle income",
+      gdp > 4465 & gdp <= 13845  ~ "Upper middle income",
+      gdp > 13845                        ~ "High income"
+    )
+  )
+
+#6.2 Summarise Missingness by GDP Income Group
+na_gdp_table <- master_table %>%
+  group_by(income_group) %>%
+  summarise(
+    total_n    = n(),
+    na_count   = sum(is.na(Gini_Index) | is.na(ssr)),
+    na_percent = round(na_count / total_n * 100, 2),
+    usable_n   = total_n - na_count
+  ) %>%
+  arrange(desc(na_percent)) %>%
+  ungroup()
+
+# Create Total Row
+gdp_total_row <- master_table %>%
+  summarise(
+    income_group = "Total",
+    total_n    = 193,
+    na_count   = sum(is.na(Gini_Index) | is.na(ssr)),
+    na_percent = round(na_count / total_n * 100, 2),
+    usable_n   = total_n - na_count
+  )
+
+# Bind total row to the original table
+na_gdp_table <- bind_rows(na_gdp_table, gdp_total_row)
+
+na_gdp_table
+```
+
+```{r, echo=FALSE}
+#6.7 Summarise Missingness by Region
+na_region_table <- master_table %>%
+  group_by(region) %>%
+  summarise(
+    total_n    = n(),
+    na_count   = sum(is.na(Gini_Index) | is.na(ssr)),
+    na_percent = round(na_count / total_n * 100, 2),
+    usable_n   = total_n - na_count
+  ) %>%
+  arrange(desc(na_percent)) %>%
+  ungroup()
+
+# Create Total Row
+region_total_row <- master_table %>%
+  summarise(
+    region = "Total",
+    total_n    = 193,
+    na_count   = sum(is.na(Gini_Index) | is.na(ssr)),
+    na_percent = round(na_count / total_n * 100, 2),
+    usable_n   = total_n - na_count
+  )
+
+# Bind total row to the original table
+na_region_table <- bind_rows(na_region_table, region_total_row)
+
+na_region_table
+```
+
+```{r}
+#7. Create Cleaned Master Table (no missingness in key vars)
 master_table_clean <- 
   master_table %>%
   drop_na(Gini_Index, ssr)
@@ -591,6 +674,45 @@ df_clust %>%
 # Interactive Plot
 
 ########## RECYCLE BIN
+
+```{r}
+master_table %>%
+  summarise(
+    na_ct_year_g   = sum(is.na(master_table$Gini_Index)), # Missingness by gini
+    total_n_year_g = n(),                      # group-specific N
+    na_pct_year_g  = na_ct_year_g / total_n_year_g * 100,
+    sample_n_year_g = n() - na_ct_year_g,
+    na_ct_year_s   = sum(is.na(master_table$ssr)), # Missingness by ssr
+    total_n_year_s = n(),                      # group-specific N
+    na_pct_year_s  = na_ct_year_s / total_n_year_s * 100,
+    sample_n_year_s = n() - na_ct_year_s)
+
+    na_ct_year_gdp   = sum(is.na(master_table$gdp)), # Missingness by gdp
+    total_n_year_gdp = n(),                      # group-specific N
+    na_pct_year_gdp  = na_ct_year_gdp / total_n_year_gdp * 100,
+    sample_n_year_gdp = n() - na_ct_year_gdp,
+    na_ct_year_region   = sum(is.na(master_table$region)), # Missingness by region
+    total_n_year_region = n(),                      # group-specific N
+    na_pct_year_gregion  = na_ct_year_gdp / total_n_year_gdp * 100,
+    sample_n_year_region = n() - na_ct_year_gdp)
+
+missing_table <- master_table %>%
+  summarise(
+    na_ct_year_g   = sum(is.na(master_table$Gini_Index)), # Missingness by gini
+    total_n_year_g = n(),                      # group-specific N
+    na_pct_year_g  = na_ct_year_g / total_n_year_g * 100,
+    sample_n_year_g = n() - na_ct_year_g,
+      na_ct_year_s   = sum(is.na(master_table$ssr)), # Missingness by ssr
+      total_n_year_s = n(),                      # group-specific N
+      na_pct_year_s  = na_ct_year_s / total_n_year_s * 100,
+      sample_n_year_s = n() - na_ct_year_s,
+        na_ct_year_gdp   = sum(is.na(master_table$gdp)), # Missingness by gdp
+        total_n_year_gdp = n(),                      # group-specific N
+        na_pct_year_gdp  = na_ct_year_gdp / total_n_year_gdp * 100,
+        sample_n_year_gdp = n() - na_ct_year_gdp)
+missing_table
+```
+
 
 ```{r}
 # Remove non-countries with WB look-up table
