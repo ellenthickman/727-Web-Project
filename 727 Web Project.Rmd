@@ -1,14 +1,14 @@
 ---
-title: "Exploring Development Indicators through Food Self-Sufficeiency"
-subtitle: "727 Web Project"
+title: "Exploring Development Indicators through Food Self-Sufficiency"
 author: "Ellen Hickman"
 date: "Fall 2025"
-output: word_document
-  toc: true
-  toc_depth: 2
-  number_sections: true
-  fig_caption: true
-  df_print: kable
+output:
+  word_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+    df_print: kable
 bibliography: ref.bib
 ---
 
@@ -29,17 +29,17 @@ library(WDI)
 library(countrycode) # for linking datasets
 ```
 
-# Introduction:
+# 1. Introduction:
 
-Small-scale local food chains (eg. farmer's markets, food co-operatives, farm-to-table), particularly in the West, are held to be beneficial towards individual, community, and environmental health as shorter food chains encourage nutrient dense products (eg. produce, meat, eggs, and dairy), support local economies, and reduce climate impact (cite). In curiosity whether the benefits to local food production and consumption hold on a *national and global scale*, this project investigates whether national food self-sufficiency (a proxy of local food chains) can support strong societal well-being, or, alternatively, if participation in globalized trade is necessary for health and equity outcomes.
+Small-scale local food chains (eg. farmer's markets, food co-operatives, farm-to-table), particularly in the West, are held to be beneficial towards individual, community, and environmental health as shorter food chains encourage nutrient dense products (eg. produce, meat, eggs, and dairy), support local economies, and reduce climate impact [@jackson2010]. In curiosity whether the benefits to local food production and consumption hold on a *national and global scale*, this project investigates whether national food self-sufficiency (a proxy of local food chains) can support strong societal well-being, or, alternatively, if participation in globalized trade is necessary for health and equity outcomes.
 
 After cleaning the data and addressing outliers, I explore distributions and relationships among variables, revealing non-linear patterns that motivate clustering. Hierarchical and K-Means analysis identifies three distinct “Food System Archetypes,” highlighting groups of countries that differ in health, wealth, and reliance on local versus global food systems. Visualization of cluster patterns and summary statistics allows us to evaluate whether countries can achieve high health outcomes without intensive resource extraction, providing empirical insight into the validity of the De-Growth hypothesis [@jackson2010] in the agricultural sector and economic inequality.
 
-# Data Sources:
+# 2. Data Sources:
 
 Using country-level data for 2021, I combine FAOSTAT measures of food self-sufficiency (SSR) with World Bank indicators of GDP per capita, life expectancy, and income inequality (Gini Index), by using the ISO3 country codes as a common key. Below, I describe the data collection and cleaning process for each dataset.
 
-## 1A. FAO Data: Creating Food Self-Sufficiency Ratio (SSR)
+## 2A. FAO Data: Creating Food Self-Sufficiency Ratio (SSR)
 
 From the FAO Food Balance Sheets (FBS) domain, I collect country-level data on wheat production, imports, and exports for 2021. Wheat is a staple crop globally, making it a suitable proxy for overall food self-sufficiency.
 
@@ -101,8 +101,19 @@ fao_data_c
 ```{r, include=FALSE}
 ## 1D. Clean Data
 # Convert to wide format
+fao_data_c_w <- fao_data_c %>%
+  pivot_wider(
+    names_from = element,
+    values_from = value
+  ) %>%
+  rename(
+    production       = production,
+    import_quantity  = import_quantity,
+    export_quantity  = export_quantity
+  )
+
 fao_data_c_w <- fao_data_c_w %>%
-  left_join(country_codes %>% select(area_code, region), by = "area_code")
+  left_join(country_codes %>% select(area_code, ISO3, region), by = c("area_code", "region"))
 fao_data_c_w 
 ```
 
@@ -113,6 +124,11 @@ fao_data_c_w
 # SSR ≈ 100%: Self-Sufficient (Local). The country eats what it grows (e.g., Guyana, India for certain grains).
 
 fao_data_c_w$ssr <- fao_data_c_w$production/(fao_data_c_w$production + fao_data_c_w$import_quantity - fao_data_c_w$export_quantity)
+
+fao_data_c_w <- fao_data_c_w %>%
+  mutate(
+    ssr = production / (production + import_quantity - export_quantity)
+  )
 
 fao_data_c_w_ssr <- fao_data_c_w %>% 
   mutate(
@@ -132,7 +148,7 @@ fao_data_c_w_ssr %>%
   arrange(ssr)
 ```
 
-## 2A. WB Data: Fetching World Bank Indicators
+## 2B. WB Data: Fetching World Bank Indicators
 
 ### Income Inequality: Gini Index
 
@@ -193,7 +209,7 @@ ggsave("gini_missingness_by_year.png", width = 10, height = 6)
 
 As observed in Figure 1., missingness for the Gini Index is high across the years 200 and 2023, ranging from \~60% missingness to \~80%. The U-shaped curve shows that NSO HH data collection was highest in the years between 2000 and 2023, with the highest amount of missingness at the peaks of the last 20 years. In the present analysis, I select 2021 Gini data since it yields the highest sample size in the most recent (last 5) years.
 
-## 2B. WB Data: Additional World Bank Indicators for 2021
+### WB Data: Additional World Bank Indicators for 2021
 
 I also collect World Bank data for GDP per capita (current USD) and Life Expectancy at Birth (total years) for 2021 to include in the analysis as additional development indicators. GDP per capita is a standard measure of economic prosperity, while life expectancy reflects overall health outcomes in a country.
 
@@ -219,11 +235,14 @@ master_table <- fao_data_c_w_ssr %>%
 master_table
 ```
 
-#3B. Fraction of Missing Information by Key Variables
+# 3. Data Exploration
+
+## 3A. Fraction of Missing Information (FMI) by Key Variables
 
 In Table 3., the fraction of missingness for the two key variables of interest: Gini Index and Food Self-Sufficiency Ratio (SSR) is provided over the total number of countries in the world [@un2025].
 
-As you see here, there are high levels of missingness for both Gini Index (approximately 53.37%) and SSR (approximately 20.92%), indicating that a significant portion of countries lack data for these indicators in 2021. This missingness was addressed  by restricting the sample to countries with complete data. 
+As you see here, there are high levels of missingness for both Gini Index (approximately 53.37%) and SSR (approximately 20.92%), indicating that a significant portion of countries lack data for these indicators in 2021. This missingness was addressed by restricting the sample to countries with complete data.
+
 ```{r, echo=FALSE}
 ## 5. Check for Missingness in Master Table: Gini Index and SSR
 # 5.1 Missingness Summary Table: Gini
@@ -249,7 +268,8 @@ na_gini_srr_table <- bind_rows(gini_summary, ssr_summary)
 na_gini_srr_table
 ```
 
-Next, I examined missingness patterns by GDP and by region to see if certain groups of countries were more likely to have missing data for Gini Index or SSR. From Table 4. and Table 5., we can see that lower-income countries and certain regions (e.g., Sub-Saharan Africa) have higher rates of missingness, which may reflect challenges in data collection and reporting in these contexts.
+Next, I examined missingness patterns by GDP income group [@wb2025] and by region to see if certain groups of countries were more likely to have missing data for Gini Index or SSR. From Table 4. and Table 5., we can see that lower-income countries and certain regions (e.g., Sub-Saharan Africa) have higher rates of missingness, which may reflect challenges in data collection and reporting in these contexts.
+
 ```{r, echo=FALSE}
 #6. Missingness by GDP, by WB Income Group Thresholds (https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups)
 #6.1 Create Income Group Variable
@@ -325,10 +345,9 @@ na_region_table
 master_table_clean <- 
   master_table %>%
   drop_na(Gini_Index, ssr)
-glimpse(master_table_clean)
 ```
 
-## 6. Descriptive Statisitics
+## 3B. Descriptive Statistics
 
 Out of the new sample (n = 60), I examine distributions of the key clustering variables: Gini Index, Food Self-Sufficiency Ratio (SSR), and GDP per capita. Summary statistics and boxplots in Figures 2. 'Boxplot of Food Self-Suffiency Ratio (SSR)' reveal that there is considerable variation in these indicators across countries, with some outliers present (notably Canada with a very high SSR of 1305.29 -- meaning that Canada is a main global exporter of wheat). These descriptive statistics provide context for the subsequent clustering analysis.
 
@@ -341,7 +360,9 @@ boxplot(master_table_clean$Gini_Index, main = "Boxplot of Gini Index", ylab = "G
 boxplot(master_table_clean$ssr, main = "Boxplot of Food Self-Sufficiency Ratio (SSR)", ylab = "SSR")
 boxplot(master_table_clean$gdp, main = "Boxplot of GDP per Capita", ylab = "GDP per Capita")
 ```
-Dropping Canada as outlier for summary stats and plots (Final n = 59), the descriptive statistics for the clustering variables are summarized in Table 6. below.
+
+I chose to drop Canada as an outlier for summary stats and plots (Final n = 59), the descriptive statistics for the clustering variables are summarized in Table 6. below.
+
 ```{r, echo=FALSE}
 library(dplyr)
 library(knitr)
@@ -398,7 +419,10 @@ slide_table_long %>%
   kable_styling(bootstrap_options = c("striped","hover","condensed"),
                 full_width = FALSE, font_size = 14)
 ```
-In an initial exploration of the relationship between SSR and Gini Index, I create a scatterplot (Figure 5.) to visualize any potential patterns. The plot reveals a non-linear relationship, suggesting that countries with very low SSR (importers) tend to have more variability in income inequality than countries with very high SSR (exporters). Countries with moderate SSR (100) exhibit lower Gini Index values. This observation motivates the use of clustering techniques to identify distinct groups of countries based on these development indicators.
+
+## 3C. Scatterplot Exploration: SSR vs. Gini Index
+
+In an initial exploration of the relationship between SSR and Gini Index, I created a scatterplot (Figure 5.) to visualize any potential patterns. The plot reveals a non-linear relationship, suggesting that countries with very low SSR (importers) tend to have more variability in income inequality than countries with very high SSR (exporters). Countries with moderate SSR (100) exhibit lower Gini Index values. This observation motivates the use of clustering techniques to identify distinct groups of countries based on these development indicators.
 
 ```{r}
 ## 6. Simple Scatterplot
@@ -425,6 +449,7 @@ ggsave("ssr_vs_gini_CAN_scatterplot.png", width = 10, height = 6)
 ```
 
 # Clustering Analysis
+
 I chose a hierarchical clustering approach to identify groups of countries based on life expectancy, food self-sufficiency ratio (SSR), Gini Index, and GDP per capita. Hierarchical clustering is suitable for this analysis because it handles smaller sample sizes well and provides a visual representation of the clustering process through dendrograms.
 
 ```{r, echo=FALSE}
@@ -461,6 +486,7 @@ fviz_dend(
             )
 )
 ```
+
 The hierarchical clustering dendrogram (Figure 6.) illustrates the grouping of countries based on the selected development indicators. By cutting the dendrogram at three clusters, we can identify distinct groups of countries that share similar profiles in terms of life expectancy, SSR, Gini Index, and GDP per capita.
 
 ```{r, echo=FALSE}
@@ -487,409 +513,14 @@ df_clust %>%
     font_size = 16
   )
 ```
-The summary table (Table 7.) presents the mean values of life expectancy, SSR, Gini Index, and GDP per capita for each hierarchical cluster. Across all four clustering variables, we observe considerable variation in country profiles, indicating that the clusters represent distinct "Food System Archetypes" with differing development outcomes. In terms of SSR and GDP per capita, we can define countries as follows:
--   **Cluster 1**: High SSR (globalized exporters) and high GDP per capita. These countries tend to have high life expectancy and low income inequality.
--   **Cluster 2**: Moderate SSR (self-sufficient/localized wheat food chains) and moderate GDP per capita. These countries exhibit moderate life expectancy and income inequality.
--   **Cluster 3**: Low SSR (importers) and low GDP per capita. These countries generally have lower life expectancy and higher income inequality.
 
-# Conclusion
+The summary table (Table 7.) presents the mean values of life expectancy, SSR, Gini Index, and GDP per capita for each hierarchical cluster. Across all four clustering variables, we observe considerable variation in country profiles, indicating that the clusters represent distinct "Food System Archetypes" with differing development outcomes. In terms of SSR and GDP per capita, we can define countries as follows: - **Cluster 1**: High SSR (globalized exporters) and high GDP per capita. These countries tend to have high life expectancy and low income inequality. - **Cluster 2**: Moderate SSR (self-sufficient/localized wheat food chains) and moderate GDP per capita. These countries exhibit moderate life expectancy and income inequality. - **Cluster 3**: Low SSR (importers) and low GDP per capita. These countries generally have lower life expectancy and higher income inequality.
 
-The hierarchical clustering analysis reveals three distinct "Food System Archetypes" among countries based on life expectancy, food self-sufficiency ratio (SSR), Gini Index, and GDP per capita. The clusters highlight the varying development outcomes associated with different levels of food self-sufficiency and economic prosperity. The findings support initial concepts regarding the relationship between local food systems in ther terms of; rich globalized exporters, poor globalized importers; and middling localized economies. The evidence that both the richest and the poorest countries rely on globalized trade suggest that global inequality is in part a product of global food chains, natural resource extraction, and imperial global markets. 
+# 4. Conclusion
 
-However, contrary to De-Growth theory [@jackson2010] and societal well-being, the evidence from this exploratory analysis suggests that countries with higher SSR (exporters) tend to have better health and equity outcomes -- rather than localized food chains promoting better health, community, and ecological well-being. 
+The hierarchical clustering analysis reveals three distinct "Food System Archetypes" among countries based on life expectancy, food self-sufficiency ratio (SSR), Gini Index, and GDP per capita. The clusters highlight the varying development outcomes associated with different levels of food self-sufficiency and economic prosperity. The findings support initial concepts regarding the relationship between local food systems in ther terms of; rich globalized exporters, poor globalized importers; and middling localized economies. The evidence that both the richest and the poorest countries rely on globalized trade suggest that global inequality is in part a product of global food chains, natural resource extraction, and imperial global markets.
 
-Further research includes explore the causal mechanisms underlying these relationships and consider additional factors such as governance, social policies, and environmental sustainability. Direct suggestions for futher analysis include 1) incoporating longitudinal data to assess changes over time, 2) creating an aggregate of all food products  (eg. rice, fruit, vegetables, dairy, meat, etc.) to calcuate an overall SSR, 3) including the different SSRs for varying food groups in the cluster analysis, and 4) expanding the set of development indicators to capture a more holistic view of societal well-being.
+However, contrary to De-Growth theory [@jackson2010] and societal well-being, the evidence from this exploratory analysis suggests that countries with higher SSR (exporters) tend to have better health and equity outcomes -- rather than localized food chains promoting better health, community, and ecological well-being.
 
-########## RECYCLE BIN
-```{r, results='asis'}
-# -------------------------------------------------------------
-# 5. View cluster assignments + summarized variable profiles
-# -------------------------------------------------------------
-library(knitr)
-library(kableExtra)
+Further research includes explore the causal mechanisms underlying these relationships and consider additional factors such as governance, social policies, and environmental sustainability. Direct suggestions for futher analysis include 1) incoporating longitudinal data to assess changes over time, 2) creating an aggregate of all food products (eg. rice, fruit, vegetables, dairy, meat, etc.) to calcuate an overall SSR, 3) including the different SSRs for varying food groups in the cluster analysis, and 4) expanding the set of development indicators to capture a more holistic view of societal well-being.
 
-df_clust %>%
-  group_by(cluster) %>%
-  summarise(
-    `Life Expectancy` = round(mean(life_expectancy), 1),
-    `Self-Sufficiency Ratio (SSR)` = round(mean(ssr), 1),
-    `Gini Index` = round(mean(Gini_Index), 1),
-    `GDP per Capita (USD)` = round(mean(gdp), 0)
-  ) %>%
-  kable(
-    caption = "Cluster Profiles: Mean Values by Cluster",
-    format = "html",
-    align = "c",
-    col.names = c("Cluster", "Life Expectancy", "SSR", "Gini Index", "GDP per Capita")
-  ) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover", "condensed"),
-    full_width = FALSE,
-    font_size = 16
-  )
-```
-
-
-```{r, echo=FALSE}
-# -------------------------------------------------------------
-# HIERARCHICAL CLUSTERING PIPELINE FOR:
-# life_expectancy, ssr, Gini_Index, gdp, region
-# -------------------------------------------------------------
-
-library(dplyr)
-library(factoextra)
-library(ggplot2)
-library(knitr)
-
-# -------------------------------------------------------------
-# 1. Select variables + scale
-# -------------------------------------------------------------
-
-df_clust <- master_table_noCAN %>%
-  select(country, life_expectancy, ssr, Gini_Index, gdp) %>%
-  na.omit()
-
-df_scaled <- scale(df_clust %>% select(-country))
-
-
-# -------------------------------------------------------------
-# 2. Compute distance matrix and hierarchical clustering
-# -------------------------------------------------------------
-
-# Compute Euclidean distances
-d <- dist(df_scaled, method = "euclidean")
-
-# Perform hierarchical clustering using Ward’s method
-hc <- hclust(d, method = "ward.D2")
-
-# -------------------------------------------------------------
-# 3. Visualize dendrogram (pretty!)
-# -------------------------------------------------------------
-
-fviz_dend(hc,
-          k = 3,                          # Number of clusters, adjust as needed
-          rect = TRUE,                    # Draw rectangles around clusters
-          rect_border = "blue",
-          rect_fill = TRUE,
-          color_labels_by_k = TRUE,
-          main = "Hierarchical Clustering Dendrogram",
-          cex = 0.8)                      # Adjust size as needed
-
-# -------------------------------------------------------------
-# 4. Cut the tree to define clusters (K = 3 as in k-means)
-# -------------------------------------------------------------
-
-df_clust$hcluster <- factor(cutree(hc, k = 3))
-
-
-# -------------------------------------------------------------
-# 5. Visualize clusters with PCA plot (prettified)
-# -------------------------------------------------------------
-fviz_cluster(list(data = df_scaled, cluster = df_clust$hcluster),
-             geom = "point",
-             ellipse.type = "t",
-             palette = "jco",
-             main = "Hierarchical Clustering of Countries",
-             labelsize = 6,
-             repel = TRUE) 
-
-# -------------------------------------------------------------
-# 6. Summary table by hierarchical clusters
-# -------------------------------------------------------------
-df_clust %>%
-  group_by(hcluster) %>%
-  summarise(across(c(life_expectancy, ssr, Gini_Index, gdp), mean, na.rm = TRUE)) %>%
-  kable(col.names = c("Hier. Cluster", "Life Expectancy", "SSR", "Gini Index", "GDP"),
-        caption = "Cluster Means by Hierarchical Cluster",
-        digits = 2)
-```
-
-```{r}
-# -------------------------------------------------------------
-# K-MEANS CLUSTERING PIPELINE FOR:
-# life_expectancy, ssr, Gini_Index, gdp, region
-# -------------------------------------------------------------
-
-library(dplyr)
-library(factoextra)
-library(ggplot2)
-
-# -------------------------------------------------------------
-# 1. Select variables + scale
-# -------------------------------------------------------------
-
-df_clust <- master_table_noCAN %>%
-  select(country, life_expectancy, ssr, Gini_Index, gdp) %>%
-  na.omit()
-
-df_scaled <- scale(df_clust %>% select(-country))
-
-
-# -------------------------------------------------------------
-# 2. Determine optimal number of clusters (Elbow + Silhouette)
-# -------------------------------------------------------------
-
-# Elbow plot
-fviz_nbclust(df_scaled, kmeans, method = "wss") +
-  ggtitle("Elbow Method for Optimal K")
-
-# Silhouette plot
-fviz_nbclust(df_scaled, kmeans, method = "silhouette") +
-  ggtitle("Silhouette Method for Optimal K")
-
-
-# -------------------------------------------------------------
-# 3. Run K-means (K = 3 as chosen)
-# -------------------------------------------------------------
-
-set.seed(123123)
-k3 <- kmeans(df_scaled, centers = 3, nstart = 25)
-
-df_clust$cluster <- factor(k3$cluster)
-
-
-# -------------------------------------------------------------
-# 4. Visualize the clusters
-# -------------------------------------------------------------
-
-fviz_cluster(k3, data = df_scaled,
-             geom = "point",
-             ellipse.type = "t",
-             repel = TRUE,
-             labelsize = 6) +
-  ggtitle("K-means Clustering of Countries")
-
-
-# -------------------------------------------------------------
-# 5. Optional: View cluster assignments with the data
-# -------------------------------------------------------------
-library(knitr)
-# Optional: summary by cluster
-df_clust %>%
-  group_by(cluster) %>%
-  summarise(across(c(life_expectancy, ssr, Gini_Index, gdp), mean)) %>% 
-  kable()
-  
-```
-
-
-```{r}
-# -------------------------------------------------------------
-# K-MEANS CLUSTERING PIPELINE FOR:
-# life_expectancy, ssr, Gini_Index, gdp
-# -------------------------------------------------------------
-
-library(dplyr)
-library(factoextra)
-library(ggplot2)
-library(cluster)
-library(corrplot)
-
-# -------------------------------------------------------------
-# 1. Select variables + scale
-# -------------------------------------------------------------
-
-df_clust <- master_table_noCAN %>%
-  select(country, life_expectancy, ssr, Gini_Index, gdp) %>%
-  na.omit()
-
-# Scale numeric variables (k-means requires scaling)
-df_scaled <- scale(df_clust %>% select(-country))
-
-# -------------------------------------------------------------
-# 1a. (Recommended) Check correlations between variables
-# -------------------------------------------------------------
-# Helps detect redundancy before clustering
-corrplot(cor(df_clust %>% select(-country)), method = "circle")
-
-# -------------------------------------------------------------
-# 2. Determine optimal number of clusters (Elbow + Silhouette)
-# -------------------------------------------------------------
-
-# Elbow plot (look for bend in WSS)
-fviz_nbclust(df_scaled, kmeans, method = "wss") +
-  ggtitle("Elbow Method for Optimal K")
-
-# Silhouette plot (higher avg silhouette = better)
-fviz_nbclust(df_scaled, kmeans, method = "silhouette") +
-  ggtitle("Silhouette Method for Optimal K")
-
-# -------------------------------------------------------------
-# 2a. (Recommended) Gap statistic for additional K guidance
-# -------------------------------------------------------------
-set.seed(123)
-gap <- clusGap(df_scaled, FUN = kmeans, nstart = 25, K.max = 10)
-fviz_gap_stat(gap)
-
-# -------------------------------------------------------------
-# 3. Run K-means (K = 3 as chosen)
-# -------------------------------------------------------------
-
-set.seed(123123)
-k3 <- kmeans(df_scaled, centers = 3, nstart = 25)
-
-df_clust$cluster <- factor(k3$cluster)
-
-# -------------------------------------------------------------
-# 4. Visualize the clusters
-# -------------------------------------------------------------
-
-fviz_cluster(k3, data = df_scaled,
-             geom = "point",
-             ellipse.type = "t",
-             repel = TRUE,
-             labelsize = 6) +
-  ggtitle("K-means Clustering of Countries")
-
-library(ggplot2)
-library(factoextra)
-
-fviz_cluster(k3, 
-             data = df_scaled,
-             geom = "point",
-             ellipse.type = "t",
-             labelsize = 0,       # no text labels — cleaner for slides
-             pointsize = 3,
-             repel = TRUE) +
-  labs(title = "K-means Clustering of Countries (K = 3)",
-       subtitle = "Based on Life Expectancy, Food Self-Sufficiency, Gini Index, and GDP",
-       x = "Principal Component 1",
-       y = "Principal Component 2") +
-  theme_minimal(base_size = 16) +
-  theme(
-    plot.title = element_text(face = "bold", size = 20),
-    plot.subtitle = element_text(size = 14),
-    axis.title = element_text(size = 16),
-    legend.title = element_text(size = 14),
-    legend.text = element_text(size = 13)
-  )
-
-
-# -------------------------------------------------------------
-# 4a. (Recommended) Check silhouette widths for cluster quality
-# -------------------------------------------------------------
-
-sil <- silhouette(k3$cluster, dist(df_scaled))
-fviz_silhouette(sil)
-
-# -------------------------------------------------------------
-# 4b. (Optional but very helpful) PCA visualization with clusters
-# -------------------------------------------------------------
-
-pca_res <- prcomp(df_scaled)
-fviz_pca_biplot(pca_res,
-                col.ind = df_clust$cluster,
-                geom.ind = "point",
-                label = "none",
-                palette = "Dark2") +
-  ggtitle("PCA Biplot with K-means Clusters")
-
-```
-
-```{r, echo=FALSE}
-d <- dist(df_scaled, method = "euclidean")
-hc <- hclust(d, method = "ward.D2")
-
-plot(hc, cex = 0.8)         # dendrogram
-rect.hclust(hc, k = 3)      # cut K clusters
-
-#add cluster labels
-df_clust$cluster_h <- cutree(hc, k = 3)
-```
-
-# Drop Canada as outlier
-
-```{r}
-master_table_noCAN <- 
-  master_table_clean %>%
-  filter(ISO3 != "CAN")
-
-ggplot(master_table_noCAN, aes(x = ssr, y = Gini_Index)) +
-  geom_point(color = "#1f77b4", size = 3, alpha = 0.8) +  # larger, slightly transparent points
-  labs(
-    title = "Food Self-Sufficiency Ratio vs. Gini Index",
-    subtitle = "Initial Exploration of Variables Used in Clustering",
-    x = "Food Self-Sufficiency Ratio (SSR)",
-    y = "Gini Index"
-  ) +
-  theme_minimal(base_size = 16) +
-  theme(
-    plot.title = element_text(face = "bold", size = 20),
-    plot.subtitle = element_text(size = 14, color = "gray30"),
-    axis.title = element_text(size = 16),
-    axis.text = element_text(size = 14),
-    panel.grid.major = element_line(color = "gray85"),
-    panel.grid.minor = element_blank()
-  )
-```
-
-```{r}
-master_table %>%
-  summarise(
-    na_ct_year_g   = sum(is.na(master_table$Gini_Index)), # Missingness by gini
-    total_n_year_g = n(),                      # group-specific N
-    na_pct_year_g  = na_ct_year_g / total_n_year_g * 100,
-    sample_n_year_g = n() - na_ct_year_g,
-    na_ct_year_s   = sum(is.na(master_table$ssr)), # Missingness by ssr
-    total_n_year_s = n(),                      # group-specific N
-    na_pct_year_s  = na_ct_year_s / total_n_year_s * 100,
-    sample_n_year_s = n() - na_ct_year_s)
-
-    na_ct_year_gdp   = sum(is.na(master_table$gdp)), # Missingness by gdp
-    total_n_year_gdp = n(),                      # group-specific N
-    na_pct_year_gdp  = na_ct_year_gdp / total_n_year_gdp * 100,
-    sample_n_year_gdp = n() - na_ct_year_gdp,
-    na_ct_year_region   = sum(is.na(master_table$region)), # Missingness by region
-    total_n_year_region = n(),                      # group-specific N
-    na_pct_year_gregion  = na_ct_year_gdp / total_n_year_gdp * 100,
-    sample_n_year_region = n() - na_ct_year_gdp)
-
-missing_table <- master_table %>%
-  summarise(
-    na_ct_year_g   = sum(is.na(master_table$Gini_Index)), # Missingness by gini
-    total_n_year_g = n(),                      # group-specific N
-    na_pct_year_g  = na_ct_year_g / total_n_year_g * 100,
-    sample_n_year_g = n() - na_ct_year_g,
-      na_ct_year_s   = sum(is.na(master_table$ssr)), # Missingness by ssr
-      total_n_year_s = n(),                      # group-specific N
-      na_pct_year_s  = na_ct_year_s / total_n_year_s * 100,
-      sample_n_year_s = n() - na_ct_year_s,
-        na_ct_year_gdp   = sum(is.na(master_table$gdp)), # Missingness by gdp
-        total_n_year_gdp = n(),                      # group-specific N
-        na_pct_year_gdp  = na_ct_year_gdp / total_n_year_gdp * 100,
-        sample_n_year_gdp = n() - na_ct_year_gdp)
-missing_table
-```
-
-
-```{r}
-# Remove non-countries with WB look-up table
-paths_allowed("https://wits.worldbank.org/wits/wits/witshelp/content/codes/country_codes.htm")
-
-wb_url <- read_html("https://wits.worldbank.org/wits/wits/witshelp/content/codes/country_codes.htm")
-
-nds <- html_nodes(wb_url, xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "WT1", " " ))]//p')
-
-wb_countries <- html_text(nds)
-head(wb_countries)
-countries <- wb_countries %>%
-  as_tibble()
-```
-
-```{r}
-# 3. The "Golden Key": Create ISO3 Column for FAO Data
-# FAO uses M49 codes; World Bank uses ISO3. Use `countrycode` to bridge them.
-fao_data$iso3c <- countrycode(fao_data$area_code_m49, 
-                              origin = "iso3n", 
-                              destination = "iso3c")
-```
-
-```{r}
-# 2. Fetch FAO Data (Nitrogen - Ecological Ceiling)
-# Domain: 'RFN' = Fertilizers by Nutrient
-nitro_data <- get_faostat_bulk(code = "RFN", date_format = "%Y") %>%
-  filter(Year == 2021, 
-         Item == "Nutrient nitrogen N (total)",
-         Element == "Use per area of cropland") %>%
-  select(area_code_m49, Nitrogen_Use = Value)
-```
