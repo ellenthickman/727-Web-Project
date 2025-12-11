@@ -2,13 +2,7 @@
 title: "Exploring Development Indicators through Food Self-Sufficiency"
 author: "Ellen Hickman"
 date: "Fall 2025"
-output:
-  word_document:
-    toc: true
-    toc_depth: 2
-    number_sections: true
-    fig_caption: true
-    df_print: kable
+output: pdf_document
 bibliography: ref.bib
 ---
 
@@ -47,19 +41,12 @@ The SSR is calculated as $SSR = \frac{\text{Food Production} \times 100}{\text{P
 
 -   An SSR \> 100% indicates a net exporter (globalized provider) The country produces more than it eats.
 -   SSR \< 100% indicates import dependence (globalized consumer) The country relies on global chains to eat.
--   SSR ≈ 100% indicates self-sufficiency (local). The country eats what it grows.
+-   SSR $\approx$ 100% indicates self-sufficiency (local). The country eats what it grows.
 
 As a taste of who is "local", Table 1. lists the handful of countries (five) that eat the amount of wheat that they grow, with SSR ranging from 90-110.
 
 ```{r, include=FALSE}
-## 1A. FAO Data: Creating Food Self-Sufficiency Ratio (SSR)
-fao_data <- get_faostat_bulk("FBS") # Domain 'FBS' = Food Balance Sheets
-glimpse(fao_data)
-options(scipen = 999)
-```
-
-```{r, include=FALSE}
-### 1B. Collect World Bank Country Codes to merge datasets
+### 1A. Collect World Bank Country Codes to merge datasets
 # Remove non-countries with WB look-up table
 library(readr)
 country_codes <- read_csv("~/Desktop/727/727 Web Project/wb_countrycodes.csv") %>%
@@ -73,12 +60,12 @@ country_codes
 ```
 
 ```{r, include=FALSE}
-## 1C. Filter FAO Data
-table(fao_data$element)
-table(fao_data$element_code)
-area_cts = table(fao_data$area)
+## 1B. Filter FAO Data
+# table(fao_data$element)
+# table(fao_data$element_code)
+# area_cts = table(fao_data$area)
 
-fao_data_c <- fao_data %>%
+fao_data_c <- get_faostat_bulk("FBS") %>%
   mutate(
     area_code = area_code__m49_ %>%
       gsub("^'", "", .) %>%       # remove leading apostrophe
@@ -99,7 +86,7 @@ fao_data_c
 ```
 
 ```{r, include=FALSE}
-## 1D. Clean Data
+## 1C. Clean Data
 # Convert to wide format
 fao_data_c_w <- fao_data_c %>%
   pivot_wider(
@@ -118,7 +105,7 @@ fao_data_c_w
 ```
 
 ```{r, include=FALSE}
-## 1E. Food Self-Sufficiency Ratio (SSR) Calculation
+## 1D. Food Self-Sufficiency Ratio (SSR) Calculation
 # SSR > 100%: Net Exporter (Globalized Provider). The country produces more than it eats (e.g., Brazil with Soy).
 # SSR < 100%: Import Dependent (Globalized Consumer). The country relies on global chains to eat (e.g., Japan, UK).
 # SSR ≈ 100%: Self-Sufficient (Local). The country eats what it grows (e.g., Guyana, India for certain grains).
@@ -413,11 +400,8 @@ slide_table_long <- slide_table %>%
 slide_table_long %>%
   kable(
     caption = "Descriptive Statistics for Clustering Variables",
-    align = "c",
-    format = "html"
-  ) %>%
-  kable_styling(bootstrap_options = c("striped","hover","condensed"),
-                full_width = FALSE, font_size = 14)
+    align = "c"
+  ) 
 ```
 
 ## 3C. Scatterplot Exploration: SSR vs. Gini Index
@@ -452,7 +436,16 @@ ggsave("ssr_vs_gini_CAN_scatterplot.png", width = 10, height = 6)
 
 I chose a hierarchical clustering approach to identify groups of countries based on life expectancy, food self-sufficiency ratio (SSR), Gini Index, and GDP per capita. Hierarchical clustering is suitable for this analysis because it handles smaller sample sizes well and provides a visual representation of the clustering process through dendrograms.
 
-```{r, echo=FALSE}
+```{r, include=FALSE}
+# 1. Select variables + scale
+df_clust <- master_table_noCAN %>%
+  select(country, life_expectancy, ssr, Gini_Index, gdp) %>%
+  na.omit()
+
+df_scaled <- scale(df_clust %>% select(-country))
+```
+
+```{r, echo=FALSE, warning=FALSE}
 library(factoextra)
 library(ggplot2)
 
@@ -462,6 +455,7 @@ rownames(df_scaled) <- df_clust$country
 # Compute the distance and clustering
 d <- dist(df_scaled, method = "euclidean")
 hc <- hclust(d, method = "ward.D2")
+df_clust$hcluster <- factor(cutree(hc, k = 3))
 
 # Pretty dendrogram with rectangles and custom theme
 fviz_dend(
@@ -503,15 +497,9 @@ df_clust %>%
   ) %>%
   kable(
     caption = "Hierarchical Cluster Profiles: Mean Values by Cluster",
-    format = "html",
     align = "c",
     col.names = c("Hier. Cluster", "Life Expectancy", "SSR", "Gini Index", "GDP per Capita")
-  ) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover", "condensed"),
-    full_width = FALSE,
-    font_size = 16
-  )
+  ) 
 ```
 
 The summary table (Table 7.) presents the mean values of life expectancy, SSR, Gini Index, and GDP per capita for each hierarchical cluster. Across all four clustering variables, we observe considerable variation in country profiles, indicating that the clusters represent distinct "Food System Archetypes" with differing development outcomes. In terms of SSR and GDP per capita, we can define countries as follows: - **Cluster 1**: High SSR (globalized exporters) and high GDP per capita. These countries tend to have high life expectancy and low income inequality. - **Cluster 2**: Moderate SSR (self-sufficient/localized wheat food chains) and moderate GDP per capita. These countries exhibit moderate life expectancy and income inequality. - **Cluster 3**: Low SSR (importers) and low GDP per capita. These countries generally have lower life expectancy and higher income inequality.
